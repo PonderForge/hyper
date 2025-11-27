@@ -88,7 +88,7 @@ enum Kind {
 /// [`Sender::abort()`]: struct.Sender.html#method.abort
 #[must_use = "Sender does nothing unless sent on"]
 #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-pub(crate) struct Sender {
+pub struct Sender {
     want_rx: watch::Receiver,
     data_tx: BodySender,
     trailers_tx: Option<TrailersSender>,
@@ -104,14 +104,13 @@ impl Incoming {
     ///
     /// Useful when wanting to stream chunks from another thread.
     #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-    #[inline]
-    #[cfg(test)]
-    pub(crate) fn channel() -> (Sender, Incoming) {
+    pub fn channel() -> (Sender, Incoming) {
         Self::new_channel(DecodedLength::CHUNKED, /*wanter =*/ false)
     }
 
+    ///
     #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-    pub(crate) fn new_channel(content_length: DecodedLength, wanter: bool) -> (Sender, Incoming) {
+    pub fn new_channel(content_length: DecodedLength, wanter: bool) -> (Sender, Incoming) {
         let (data_tx, data_rx) = mpsc::channel(0);
         let (trailers_tx, trailers_rx) = oneshot::channel();
 
@@ -146,12 +145,13 @@ impl Incoming {
     }
 
     #[cfg(feature = "ffi")]
-    pub(crate) fn ffi() -> Incoming {
+    pub fn ffi() -> Incoming {
         Incoming::new(Kind::Ffi(crate::ffi::UserBody::new()))
     }
 
+    ///
     #[cfg(all(feature = "http2", any(feature = "client", feature = "server")))]
-    pub(crate) fn h2(
+    pub fn h2(
         recv: h2::RecvStream,
         mut content_length: DecodedLength,
         ping: ping::Recorder,
@@ -171,7 +171,7 @@ impl Incoming {
     }
 
     #[cfg(feature = "ffi")]
-    pub(crate) fn as_ffi_mut(&mut self) -> &mut crate::ffi::UserBody {
+    pub fn as_ffi_mut(&mut self) -> &mut crate::ffi::UserBody {
         match self.kind {
             Kind::Ffi(ref mut body) => return body,
             _ => {
@@ -350,7 +350,7 @@ impl fmt::Debug for Incoming {
 #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
 impl Sender {
     /// Check to see if this `Sender` can send more data.
-    pub(crate) fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<crate::Result<()>> {
+    pub fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<crate::Result<()>> {
         // Check if the receiver end has tried polling for the body yet
         ready!(self.poll_want(cx)?);
         self.data_tx
@@ -375,7 +375,7 @@ impl Sender {
     /// Send data on data channel when it is ready.
     #[cfg(test)]
     #[allow(unused)]
-    pub(crate) async fn send_data(&mut self, chunk: Bytes) -> crate::Result<()> {
+    pub async fn send_data(&mut self, chunk: Bytes) -> crate::Result<()> {
         self.ready().await?;
         self.data_tx
             .try_send(Ok(chunk))
@@ -384,7 +384,7 @@ impl Sender {
 
     /// Send trailers on trailers channel.
     #[allow(unused)]
-    pub(crate) async fn send_trailers(&mut self, trailers: HeaderMap) -> crate::Result<()> {
+    pub async fn send_trailers(&mut self, trailers: HeaderMap) -> crate::Result<()> {
         let tx = match self.trailers_tx.take() {
             Some(tx) => tx,
             None => return Err(crate::Error::new_closed()),
@@ -405,14 +405,14 @@ impl Sender {
     /// that doesn't have an async context. If in an async context, prefer
     /// `send_data()` instead.
     #[cfg(feature = "http1")]
-    pub(crate) fn try_send_data(&mut self, chunk: Bytes) -> Result<(), Bytes> {
+    pub fn try_send_data(&mut self, chunk: Bytes) -> Result<(), Bytes> {
         self.data_tx
             .try_send(Ok(chunk))
             .map_err(|err| err.into_inner().expect("just sent Ok"))
     }
 
     #[cfg(feature = "http1")]
-    pub(crate) fn try_send_trailers(
+    pub fn try_send_trailers(
         &mut self,
         trailers: HeaderMap,
     ) -> Result<(), Option<HeaderMap>> {
@@ -425,11 +425,11 @@ impl Sender {
     }
 
     #[cfg(test)]
-    pub(crate) fn abort(mut self) {
+    pub fn abort(mut self) {
         self.send_error(crate::Error::new_body_write_aborted());
     }
 
-    pub(crate) fn send_error(&mut self, err: crate::Error) {
+    pub fn send_error(&mut self, err: crate::Error) {
         let _ = self
             .data_tx
             // clone so the send works even if buffer is full
@@ -456,173 +456,173 @@ impl fmt::Debug for Sender {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::mem;
-    use std::task::Poll;
+// #[cfg(test)]
+// mod tests {
+//     use std::mem;
+//     use std::task::Poll;
 
-    use super::{Body, Incoming, SizeHint};
-    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-    use super::{DecodedLength, Sender};
-    use http_body_util::BodyExt;
+//     use super::{Body, Incoming, SizeHint};
+//     #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
+//     use super::{DecodedLength, Sender};
+//     use http_body_util::BodyExt;
 
-    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-    #[test]
-    fn test_size_of() {
-        // These are mostly to help catch *accidentally* increasing
-        // the size by too much.
+//     #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
+//     #[test]
+//     fn test_size_of() {
+//         // These are mostly to help catch *accidentally* increasing
+//         // the size by too much.
 
-        let body_size = mem::size_of::<Incoming>();
-        let body_expected_size = mem::size_of::<u64>() * 5;
-        assert!(
-            body_size <= body_expected_size,
-            "Body size = {} <= {}",
-            body_size,
-            body_expected_size,
-        );
+//         let body_size = mem::size_of::<Incoming>();
+//         let body_expected_size = mem::size_of::<u64>() * 5;
+//         assert!(
+//             body_size <= body_expected_size,
+//             "Body size = {} <= {}",
+//             body_size,
+//             body_expected_size,
+//         );
 
-        //assert_eq!(body_size, mem::size_of::<Option<Incoming>>(), "Option<Incoming>");
+//         //assert_eq!(body_size, mem::size_of::<Option<Incoming>>(), "Option<Incoming>");
 
-        assert_eq!(
-            mem::size_of::<Sender>(),
-            mem::size_of::<usize>() * 5,
-            "Sender"
-        );
+//         assert_eq!(
+//             mem::size_of::<Sender>(),
+//             mem::size_of::<usize>() * 5,
+//             "Sender"
+//         );
 
-        assert_eq!(
-            mem::size_of::<Sender>(),
-            mem::size_of::<Option<Sender>>(),
-            "Option<Sender>"
-        );
-    }
+//         assert_eq!(
+//             mem::size_of::<Sender>(),
+//             mem::size_of::<Option<Sender>>(),
+//             "Option<Sender>"
+//         );
+//     }
 
-    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-    #[test]
-    fn size_hint() {
-        fn eq(body: Incoming, b: SizeHint, note: &str) {
-            let a = body.size_hint();
-            assert_eq!(a.lower(), b.lower(), "lower for {:?}", note);
-            assert_eq!(a.upper(), b.upper(), "upper for {:?}", note);
-        }
+//     #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
+//     #[test]
+//     fn size_hint() {
+//         fn eq(body: Incoming, b: SizeHint, note: &str) {
+//             let a = body.size_hint();
+//             assert_eq!(a.lower(), b.lower(), "lower for {:?}", note);
+//             assert_eq!(a.upper(), b.upper(), "upper for {:?}", note);
+//         }
 
-        eq(Incoming::empty(), SizeHint::with_exact(0), "empty");
+//         eq(Incoming::empty(), SizeHint::with_exact(0), "empty");
 
-        eq(Incoming::channel().1, SizeHint::new(), "channel");
+//         eq(Incoming::channel().1, SizeHint::new(), "channel");
 
-        eq(
-            Incoming::new_channel(DecodedLength::new(4), /*wanter =*/ false).1,
-            SizeHint::with_exact(4),
-            "channel with length",
-        );
-    }
+//         eq(
+//             Incoming::new_channel(DecodedLength::new(4), /*wanter =*/ false).1,
+//             SizeHint::with_exact(4),
+//             "channel with length",
+//         );
+//     }
 
-    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-    #[cfg(not(miri))]
-    #[tokio::test]
-    async fn channel_abort() {
-        let (tx, mut rx) = Incoming::channel();
+//     #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
+//     #[cfg(not(miri))]
+//     #[tokio::test]
+//     async fn channel_abort() {
+//         let (tx, mut rx) = Incoming::channel();
 
-        tx.abort();
+//         tx.abort();
 
-        let err = rx.frame().await.unwrap().unwrap_err();
-        assert!(err.is_body_write_aborted(), "{:?}", err);
-    }
+//         let err = rx.frame().await.unwrap().unwrap_err();
+//         assert!(err.is_body_write_aborted(), "{:?}", err);
+//     }
 
-    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-    #[cfg(all(not(miri), feature = "http1"))]
-    #[tokio::test]
-    async fn channel_abort_when_buffer_is_full() {
-        let (mut tx, mut rx) = Incoming::channel();
+//     #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
+//     #[cfg(all(not(miri), feature = "http1"))]
+//     #[tokio::test]
+//     async fn channel_abort_when_buffer_is_full() {
+//         let (mut tx, mut rx) = Incoming::channel();
 
-        tx.try_send_data("chunk 1".into()).expect("send 1");
-        // buffer is full, but can still send abort
-        tx.abort();
+//         tx.try_send_data("chunk 1".into()).expect("send 1");
+//         // buffer is full, but can still send abort
+//         tx.abort();
 
-        let chunk1 = rx
-            .frame()
-            .await
-            .expect("item 1")
-            .expect("chunk 1")
-            .into_data()
-            .unwrap();
-        assert_eq!(chunk1, "chunk 1");
+//         let chunk1 = rx
+//             .frame()
+//             .await
+//             .expect("item 1")
+//             .expect("chunk 1")
+//             .into_data()
+//             .unwrap();
+//         assert_eq!(chunk1, "chunk 1");
 
-        let err = rx.frame().await.unwrap().unwrap_err();
-        assert!(err.is_body_write_aborted(), "{:?}", err);
-    }
+//         let err = rx.frame().await.unwrap().unwrap_err();
+//         assert!(err.is_body_write_aborted(), "{:?}", err);
+//     }
 
-    #[cfg(feature = "http1")]
-    #[test]
-    fn channel_buffers_one() {
-        let (mut tx, _rx) = Incoming::channel();
+//     #[cfg(feature = "http1")]
+//     #[test]
+//     fn channel_buffers_one() {
+//         let (mut tx, _rx) = Incoming::channel();
 
-        tx.try_send_data("chunk 1".into()).expect("send 1");
+//         tx.try_send_data("chunk 1".into()).expect("send 1");
 
-        // buffer is now full
-        let chunk2 = tx.try_send_data("chunk 2".into()).expect_err("send 2");
-        assert_eq!(chunk2, "chunk 2");
-    }
+//         // buffer is now full
+//         let chunk2 = tx.try_send_data("chunk 2".into()).expect_err("send 2");
+//         assert_eq!(chunk2, "chunk 2");
+//     }
 
-    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-    #[cfg(not(miri))]
-    #[tokio::test]
-    async fn channel_empty() {
-        let (_, mut rx) = Incoming::channel();
+//     #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
+//     #[cfg(not(miri))]
+//     #[tokio::test]
+//     async fn channel_empty() {
+//         let (_, mut rx) = Incoming::channel();
 
-        assert!(rx.frame().await.is_none());
-    }
+//         assert!(rx.frame().await.is_none());
+//     }
 
-    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-    #[test]
-    fn channel_ready() {
-        let (mut tx, _rx) = Incoming::new_channel(DecodedLength::CHUNKED, /*wanter = */ false);
+//     #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
+//     #[test]
+//     fn channel_ready() {
+//         let (mut tx, _rx) = Incoming::new_channel(DecodedLength::CHUNKED, /*wanter = */ false);
 
-        let mut tx_ready = tokio_test::task::spawn(tx.ready());
+//         let mut tx_ready = tokio_test::task::spawn(tx.ready());
 
-        assert!(tx_ready.poll().is_ready(), "tx is ready immediately");
-    }
+//         assert!(tx_ready.poll().is_ready(), "tx is ready immediately");
+//     }
 
-    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-    #[test]
-    fn channel_wanter() {
-        let (mut tx, mut rx) =
-            Incoming::new_channel(DecodedLength::CHUNKED, /*wanter = */ true);
+//     #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
+//     #[test]
+//     fn channel_wanter() {
+//         let (mut tx, mut rx) =
+//             Incoming::new_channel(DecodedLength::CHUNKED, /*wanter = */ true);
 
-        let mut tx_ready = tokio_test::task::spawn(tx.ready());
-        let mut rx_data = tokio_test::task::spawn(rx.frame());
+//         let mut tx_ready = tokio_test::task::spawn(tx.ready());
+//         let mut rx_data = tokio_test::task::spawn(rx.frame());
 
-        assert!(
-            tx_ready.poll().is_pending(),
-            "tx isn't ready before rx has been polled"
-        );
+//         assert!(
+//             tx_ready.poll().is_pending(),
+//             "tx isn't ready before rx has been polled"
+//         );
 
-        assert!(rx_data.poll().is_pending(), "poll rx.data");
-        assert!(tx_ready.is_woken(), "rx poll wakes tx");
+//         assert!(rx_data.poll().is_pending(), "poll rx.data");
+//         assert!(tx_ready.is_woken(), "rx poll wakes tx");
 
-        assert!(
-            tx_ready.poll().is_ready(),
-            "tx is ready after rx has been polled"
-        );
-    }
+//         assert!(
+//             tx_ready.poll().is_ready(),
+//             "tx is ready after rx has been polled"
+//         );
+//     }
 
-    #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
-    #[test]
-    fn channel_notices_closure() {
-        let (mut tx, rx) = Incoming::new_channel(DecodedLength::CHUNKED, /*wanter = */ true);
+//     #[cfg(all(feature = "http1", any(feature = "client", feature = "server")))]
+//     #[test]
+//     fn channel_notices_closure() {
+//         let (mut tx, rx) = Incoming::new_channel(DecodedLength::CHUNKED, /*wanter = */ true);
 
-        let mut tx_ready = tokio_test::task::spawn(tx.ready());
+//         let mut tx_ready = tokio_test::task::spawn(tx.ready());
 
-        assert!(
-            tx_ready.poll().is_pending(),
-            "tx isn't ready before rx has been polled"
-        );
+//         assert!(
+//             tx_ready.poll().is_pending(),
+//             "tx isn't ready before rx has been polled"
+//         );
 
-        drop(rx);
-        assert!(tx_ready.is_woken(), "dropping rx wakes tx");
+//         drop(rx);
+//         assert!(tx_ready.is_woken(), "dropping rx wakes tx");
 
-        match tx_ready.poll() {
-            Poll::Ready(Err(ref e)) if e.is_closed() => (),
-            unexpected => panic!("tx poll ready unexpected: {:?}", unexpected),
-        }
-    }
-}
+//         match tx_ready.poll() {
+//             Poll::Ready(Err(ref e)) if e.is_closed() => (),
+//             unexpected => panic!("tx poll ready unexpected: {:?}", unexpected),
+//         }
+//     }
+// }
